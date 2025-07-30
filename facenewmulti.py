@@ -6,6 +6,7 @@ import os
 import requests
 from insightface.app import FaceAnalysis
 from insightface.model_zoo import get_model
+import io
 
 # -------------------------------
 # Load ONNX Face Swap Model
@@ -107,3 +108,9 @@ if src_files and tgt_file:
             result = apply_swap(tgt_img, tgt_faces_data, face_map, src_faces_data, swapper)
             st.success("✅ Swap completed!")
             st.image(result, caption="🔍 Final Output", use_column_width=True)
+            
+            result_pil = Image.fromarray(result)
+            buf = io.BytesIO()
+            result_pil.save(buf, format="PNG")
+            byte_im = buf.getvalue()
+            st.download_button("📥 Download Swapped Image", data=byte_im, file_name="face_swap_result.png", mime="image/png")
