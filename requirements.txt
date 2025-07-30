@@ -1,0 +1,6 @@
+streamlit
+opencv-python-headless
+insightface==0.7.3
+onnxruntime
+requests
+Pillow
