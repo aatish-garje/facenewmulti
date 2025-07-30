@@ -77,7 +77,8 @@ if tgt_file and src_files:
     st.markdown("### 🧑‍🎯 Target Faces")
     tgt_cols = st.columns(len(tgt_faces))
     for i, face in enumerate(tgt_faces):
-        face_crop = tgt_img[face.bbox[1]:face.bbox[3], face.bbox[0]:face.bbox[2]]
+        x1, y1, x2, y2 = map(int, face.bbox)
+        face_crop = tgt_img[y1:y2, x1:x2]
         tgt_cols[i].image(face_crop, caption=f"Target #{i}", width=120)
 
     st.markdown("### 🧑 Source Faces")
