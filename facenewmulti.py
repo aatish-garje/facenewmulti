@@ -8,97 +8,89 @@ import requests
 from insightface.app import FaceAnalysis
 from insightface.model_zoo import get_model
 
-# =========================
-# 📥 Load ONNX Model
-# =========================
-
+# =============================
+# Load ONNX Model and FaceAnalysis
+# =============================
 @st.cache_resource
 def load_models():
     model_url = "https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx"
     model_path = "models/inswapper_128.onnx"
+
     if not os.path.exists("models"):
         os.makedirs("models")
+
     if not os.path.isfile(model_path):
-        with st.spinner("📦 Downloading model..."):
+        with st.spinner("🔽 Downloading FaceSwap model..."):
             r = requests.get(model_url, stream=True)
             with open(model_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
-    app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
-    app.prepare(ctx_id=0, det_size=(640, 640))
+        st.success("✅ Model downloaded!")
+
+    fa = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+    fa.prepare(ctx_id=0, det_size=(640, 640))
     swapper = get_model(model_path, providers=["CPUExecutionProvider"])
-    return app, swapper
+    return fa, swapper
 
-# =========================
-# 🔁 Face Swap Logic
-# =========================
+# =============================
+# Face Swapper
+# =============================
+def swap_faces_multi(src_img, tgt_img, fa, swapper, selected_face_index):
+    src_faces = fa.get(src_img)
+    tgt_faces = fa.get(tgt_img)
 
-def swap_faces(target_img, source_faces, selected_map, app, swapper):
-    tgt_faces = app.get(target_img)
-    if not tgt_faces:
-        return None, "❌ No faces found in target."
+    if len(src_faces) == 0:
+        return None, "❌ No face found in source image."
+    if len(tgt_faces) == 0:
+        return None, "❌ No face found in target image."
 
-    result_img = target_img.copy()
+    src_face = src_faces[0]
+    tgt_face = tgt_faces[selected_face_index]
 
-    for tgt_idx, src_idx in selected_map.items():
-        if tgt_idx >= len(tgt_faces) or src_idx >= len(source_faces):
-            continue
-        result_img = swapper.get(result_img, tgt_faces[tgt_idx], source_faces[src_idx], paste_back=True)
+    swapped = tgt_img.copy()
+    swapped = swapper.get(swapped, tgt_face, src_face, paste_back=True)
+    return swapped, None
 
-    return result_img, None
-
-# =========================
-# 🎛️ Streamlit UI
-# =========================
-
+# =============================
+# Streamlit UI
+# =============================
 st.set_page_config(layout="wide")
-st.title("🧑‍🤝‍🧑 Multi-Face Swap App (ONNX + InsightFace)")
+st.title("😎 Multi-Face Streamlit Face Swap")
 
-app, swapper = load_models()
+st.sidebar.header("📤 Upload Images")
+src_file = st.sidebar.file_uploader("Upload Source Face", type=["jpg", "jpeg", "png"])
+tgt_file = st.sidebar.file_uploader("Upload Target Image", type=["jpg", "jpeg", "png"])
 
-st.sidebar.header("📤 Upload Target Image (with multiple faces)")
-tgt_file = st.sidebar.file_uploader("Target Image", type=["jpg", "jpeg", "png"])
-
-st.sidebar.header("📥 Upload Source Face(s)")
-src_files = st.sidebar.file_uploader("Source Faces (can upload multiple)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
-
-if tgt_file and src_files:
+if src_file and tgt_file:
+    src_img = np.array(Image.open(src_file).convert("RGB"))
     tgt_img = np.array(Image.open(tgt_file).convert("RGB"))
-    src_imgs = [np.array(Image.open(f).convert("RGB")) for f in src_files]
 
-    tgt_faces = app.get(tgt_img)
-    src_faces = []
-    for img in src_imgs:
-        detected = app.get(img)
-        if detected:
-            src_faces.append(detected[0])
+    st.subheader("📸 Preview")
+    col1, col2 = st.columns(2)
+    col1.image(src_img, caption="Source Face", use_container_width=True)
+    col2.image(tgt_img, caption="Target Image", use_container_width=True)
 
-    st.subheader("👥 Detected Faces")
-    st.markdown("### 🧑‍🎯 Target Faces")
-    tgt_cols = st.columns(len(tgt_faces))
-    for i, face in enumerate(tgt_faces):
-        x1, y1, x2, y2 = map(int, face.bbox)
-        face_crop = tgt_img[y1:y2, x1:x2]
-        tgt_cols[i].image(face_crop, caption=f"Target #{i}", width=120)
+    fa, swapper = load_models()
+    tgt_faces = fa.get(tgt_img)
 
-    st.markdown("### 🧑 Source Faces")
-    src_cols = st.columns(len(src_faces))
-    for i, face in enumerate(src_faces):
-        face_crop = src_imgs[i][face.bbox[1]:face.bbox[3], face.bbox[0]:face.bbox[2]]
-        src_cols[i].image(face_crop, caption=f"Source #{i}", width=120)
+    if len(tgt_faces) == 0:
+        st.error("❌ No face detected in target image.")
+    else:
+        st.markdown("### 🎯 Detected Faces in Target Image")
+        preview_cols = st.columns(len(tgt_faces))
+        for i, face in enumerate(tgt_faces):
+            x1, y1, x2, y2 = [int(coord) for coord in face.bbox]
+            face_crop = tgt_img[y1:y2, x1:x2]
+            if face_crop.size != 0:
+                preview_cols[i].image(face_crop, caption=f"Target #{i}", width=100)
 
-    st.markdown("### 🔁 Select Swaps")
-    selected_map = {}
-    for i in range(len(tgt_faces)):
-        src_idx = st.selectbox(f"Replace Target #{i} with Source Face:", [-1] + list(range(len(src_faces))), key=f"select_{i}")
-        if src_idx != -1:
-            selected_map[i] = src_idx
+        selected_index = st.selectbox("👤 Select Face to Swap", list(range(len(tgt_faces))), index=0)
 
-    if st.button("🔄 Run Face Swap"):
-        with st.spinner("Running..."):
-            result, err = swap_faces(tgt_img, src_faces, selected_map, app, swapper)
-            if err:
-                st.error(err)
-            else:
-                st.success("✅ Swap Complete!")
-                st.image(result, caption="🎯 Final Output", use_column_width=True)
+        if st.button("🔄 Swap Face"):
+            with st.spinner("Swapping face..."):
+                result, error = swap_faces_multi(src_img, tgt_img, fa, swapper, selected_index)
+                if error:
+                    st.error(error)
+                else:
+                    st.success("✅ Face Swapped Successfully!")
+                    st.image(result, caption="🧠 Final Output", use_container_width=True)
