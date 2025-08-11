@@ -13,7 +13,7 @@ import io
 # -------------------------------
 @st.cache_resource
 def load_models():
-    model_url = "https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx"
+    model_url = "s"
     model_path = "models/inswapper_128.onnx"
     os.makedirs("models", exist_ok=True)
 
@@ -38,11 +38,19 @@ def extract_faces(img_list, app, prefix):
     face_images = []
     for idx, img in enumerate(img_list):
         detected = app.get(img)
+        h, w = img.shape[:2]
         for face in detected:
-            x1, y1, x2, y2 = [int(i) for i in face.bbox]
-            face_crop = img[y1:y2, x1:x2]
-            face_images.append(face_crop)
-            faces.append({"face": face, "img": img, "id": f"{prefix}{len(faces)}"})
+            x1, y1, x2, y2 = [max(0, min(int(i), w if idx % 2 else h)) for i in face.bbox]  # Clamp to image bounds
+            x1, y1 = max(0, int(x1)), max(0, int(y1))
+            x2, y2 = min(w, int(x2)), min(h, int(y2))
+
+            if x2 > x1 and y2 > y1:  # Ensure valid crop
+                face_crop = img[y1:y2, x1:x2]
+                # Ensure uint8 in range 0–255
+                if face_crop.dtype != np.uint8:
+                    face_crop = np.clip(face_crop, 0, 255).astype(np.uint8)
+                face_images.append(face_crop)
+                faces.append({"face": face, "img": img, "id": f"{prefix}{len(faces)}"})
     return face_images, faces
 
 # -------------------------------
@@ -64,7 +72,7 @@ def apply_swap(tgt_img, target_faces, mapping, source_faces, swapper):
 # Streamlit UI
 # -------------------------------
 st.set_page_config(layout="wide")
-st.title("🤖 Multi-Face Swap App (SimSwap + InsightFace)")
+st.title("🤖 Multi-Face Swap App")
 
 app, swapper = load_models()
 
