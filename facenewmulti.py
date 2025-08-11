@@ -13,7 +13,7 @@ import io
 # -------------------------------
 @st.cache_resource
 def load_models():
-    model_url = "s"
+    model_url = "https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx"
     model_path = "models/inswapper_128.onnx"
     os.makedirs("models", exist_ok=True)
 
